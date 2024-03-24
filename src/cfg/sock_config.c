@@ -335,7 +335,16 @@ int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
 
         return SOCK_OK;
 
-    } else {
+    }
+    else if (sock_cfg->conn_num_bytes == 0) {
+        // Connection has been terminated and needs to be closed
+        printf("Closing connection, client disconnected\n");
+        close(sock_cfg->conn_fd);
+        sock_cfg->is_connected = false;
+        // make non-zero return code to inticate that the connection is closed.
+        return SOCK_NOT_OK;
+    }
+    else {
         return SOCK_NOT_OK;
     }
 

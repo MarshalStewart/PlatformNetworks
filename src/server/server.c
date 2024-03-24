@@ -50,6 +50,12 @@ void child_process() {
 
             if ((write_pipe(child_to_parent, (void *)&counter, sizeof(counter))) > 0) {
                 // printf("Child to parent: %d\n", counter);
+                counter = 0;
+            }
+                
+            if (counter > 10) {
+                // parent process is dead
+                exit(EXIT_FAILURE);
             }
             
             set_start_time(); // Reset scheduler
@@ -98,9 +104,9 @@ int main( int argc, char *argv[] )
     //     return -1;
     // }
     
-    if ((id = initialize_sock(E_IP4_SOCK, "127.0.0.1", LOCAL_PORT_NUM, SERVER_SIDE)) < 0) {
+    if ((id = initialize_sock(E_IP4_SOCK, "0.0.0.0", 9003, SERVER_SIDE)) < 0) {
         printf("Failed to start socket\n");
-        return -1;
+        exit(EXIT_FAILURE);
     }
 
    /* Initialize scheduler */ 
