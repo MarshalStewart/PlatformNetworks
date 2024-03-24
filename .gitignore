@@ -1,0 +1,8 @@
+Makefile
+CMakeCache.txt
+client
+server
+test_client
+cmake_install.cmake
+CMakeFiles/
+*.swp

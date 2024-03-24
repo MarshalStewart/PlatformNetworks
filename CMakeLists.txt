@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.10)
-project(Server)
+project(Server C)
 
 # Set source files for server
 set(SERVER_SOURCES
