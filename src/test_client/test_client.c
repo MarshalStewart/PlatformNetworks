@@ -1,39 +1,66 @@
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <sys/types.h>
-#include <sys/socket.h>
-
-#include <netinet/in.h>
-#include <unistd.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
-#define MESSAGE_BUF_SIZE 1000
+#define SERVER_HOST "54.80.21.43"
+#define SERVER_PORT 9003
+#define BUFFER_SIZE 1024
 
-static int sockfd;
+int main() {
+    int sockfd;
+    struct sockaddr_in serv_addr;
+    char buffer[BUFFER_SIZE] = "Hello, server!";
+    ssize_t bytes_received;
 
-int main( int argc, char *agv[] ) {
-    
+    // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    char serverResponse[MESSAGE_BUF_SIZE];
-
-    struct sockaddr_in serverAddress;
-    serverAddress.sin_family = AF_INET;
-    serverAddress.sin_port = htons(9002);
-    serverAddress.sin_addr.s_addr = INADDR_ANY;
-
-    if (connect(sockfd, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0) {
-        fprintf(stderr, "Failed to connect to server.\n");
-        return -1;
+    if (sockfd < 0) {
+        perror("socket");
+        return 1;
     }
-    
-    if (recv(sockfd, &serverResponse, sizeof(serverResponse), 0) < 0) {
-        fprintf(stderr, "Didn't reciever anything from the server\n");
-        return -1;
-    }
-    
-    printf("Test client received mode from server : %s\n", serverResponse);
 
+    // Initialize server address structure
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(SERVER_PORT);
+    if (inet_pton(AF_INET, SERVER_HOST, &serv_addr.sin_addr) <= 0) {
+        perror("inet_pton");
+        close(sockfd);
+        return 1;
+    }
+
+    // Connect to server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("connect");
+        close(sockfd);
+        return 1;
+    }
+
+    // Send data to server
+    if (send(sockfd, buffer, strlen(buffer), 0) < 0) {
+        perror("send");
+        close(sockfd);
+        return 1;
+    }
+
+    // Receive data from server
+    bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0);
+    if (bytes_received < 0) {
+        perror("recv");
+        close(sockfd);
+        return 1;
+    }
+
+    // Null-terminate received data to print as a string
+    buffer[bytes_received] = '\0';
+    printf("Received from server: %s\n", buffer);
+
+    // Close socket
     close(sockfd);
+
     return 0;
 }

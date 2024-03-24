@@ -6,7 +6,7 @@
 #include <fcntl.h>
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netinet/in.h>
+#include <netdb.h>
 
 #include "server.h"
 #include "sock_config.h"
@@ -55,7 +55,12 @@ int main( int argc, char *agv[] ) {
     //     return -1;
     // }    
 
-    if ((id = initialize_sock(E_IP4_SOCK, "127.0.0.1", LOCAL_PORT_NUM, CLIENT_SIDE)) < 0) {
+    //if ((id = initialize_sock(E_IP4_SOCK, "54.50.21.43", 9003, CLIENT_SIDE)) < 0) {
+    //    printf("Failed to get a socket.\n");
+    //    return -1;
+    //}      
+    
+    if ((id = initialize_sock(E_IP4_SOCK, "0.0.0.0", 9003, CLIENT_SIDE)) < 0) {
         printf("Failed to get a socket.\n");
         return -1;
     }      
