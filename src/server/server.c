@@ -58,10 +58,10 @@ void child_process() {
                 exit(EXIT_FAILURE);
             }
             
+            counter++;
             set_start_time(); // Reset scheduler
         }
 
-        counter++;
 
         fflush(stdout); // Flush the output buffer
 
@@ -99,15 +99,26 @@ int main( int argc, char *argv[] )
         // Parent continue ...
     }    
         
-    // if ((id = initialize_sock(E_LOCAL_SOCK, my_sock, 0, SERVER_SIDE)) < 0) {
-    //     printf("Failed to start socket\n");
-    //     return -1;
-    // }
-    
-    if ((id = initialize_sock(E_IP4_SOCK, "0.0.0.0", 9003, SERVER_SIDE)) < 0) {
+    if ((id = initialize_sock(E_LOCAL_SOCK, my_sock, 0, SERVER_SIDE)) < 0) {
         printf("Failed to start socket\n");
-        exit(EXIT_FAILURE);
+        return -1;
     }
+    
+    // if ((id = initialize_sock(E_TCP_SOCK, "0.0.0.0", 9003, SERVER_SIDE)) < 0) {
+    //     printf("Failed to start socket\n");
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // if ((id = initialize_sock(E_TCP_SOCK, "::", 9003, SERVER_SIDE)) < 0) {
+    //     printf("Failed to start socket\n");
+    //     kill(child_pid, SIGTERM);
+    //     exit(EXIT_FAILURE);
+    // }
+
+    // if ((id = initialize_sock(E_UDP_SOCK, "::", 9003, SERVER_SIDE)) < 0) {
+    //     printf("Failed to get a socket.\n");
+    //     return -1;
+    // }     
 
    /* Initialize scheduler */ 
     set_start_time();
@@ -117,13 +128,13 @@ int main( int argc, char *argv[] )
 
         if (check_elasped_time(TASK_SCHEDULER_1000MS_RATE)) {
 
-            // if ((rc = await_local_receive(id, buffer, sizeof(buffer))) >= 0) {
-            //     printf("Buffer: %s\n", buffer);
-            // }
-
-            if ((rc = await_tcp_receive(id, buffer, sizeof(buffer))) >= 0) {
+            if ((rc = await_local_receive(id, buffer, sizeof(buffer))) >= 0) {
                 printf("Buffer: %s\n", buffer);
-            }            
+            }
+
+            // if ((rc = await_tcp_receive(id, buffer, sizeof(buffer))) >= 0) {
+            //     printf("Buffer: %s\n", buffer);
+            // }            
             
             if ((read_pipe(child_to_parent, (void *)&ipc_buffer, sizeof(ipc_buffer))) > 0) {
                 //printf("Parent read from child: %d\n", ipc_buffer);

@@ -3,8 +3,8 @@
 static sock_config_t *sock_configs[MAX_NUM_OF_SOCKS];
 
 /* Static Functions */
-static sock_id_t _initialize_tcp_sock( int domain, int type, const char *addr, int port, bool is_server);
-static sock_id_t _initialize_local_sock( int domain, int type, const char *path, bool is_server);
+static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, bool is_server);
+static sock_id_t _initialize_local_sock( int type, const char *path, bool is_server);
 static int _find_open_sock( void );
 
 /* Initialize a sock connection, configuration
@@ -20,22 +20,14 @@ sock_id_t initialize_sock(E_APP_SOCK_TYPE app_type, const char *addr, int port, 
     sock_id_t id = SOCK_NOT_OK;
     switch (app_type) {
         case E_LOCAL_SOCK:
-            if ((id = _initialize_local_sock(AF_LOCAL, SOCK_STREAM, addr, is_server)) < 0) {
+            if ((id = _initialize_local_sock(SOCK_STREAM, addr, is_server)) < 0) {
                 return SOCK_NOT_OK;
             }
-            sock_configs[id]->app_type = app_type;
             break;
-        case E_IP4_SOCK:
-            if ((id = _initialize_tcp_sock(AF_INET, SOCK_STREAM, addr, port, is_server)) < 0) {
+        case E_TCP_SOCK:
+            if ((id = _initialize_tcp_sock(SOCK_STREAM, addr, port, is_server)) < 0) {
                 return SOCK_NOT_OK;
             }
-            sock_configs[id]->app_type = app_type;
-            break;
-        case E_IP6_SOCK:
-            if ((id = _initialize_tcp_sock(AF_INET6, SOCK_STREAM, addr, port, is_server)) < 0) {
-                return SOCK_NOT_OK;
-            }
-            sock_configs[id]->app_type = app_type;
             break;
         case E_UDP_SOCK:
         default:
@@ -57,39 +49,72 @@ sock_id_t initialize_sock(E_APP_SOCK_TYPE app_type, const char *addr, int port, 
  *      with listen().
  * 4. Connections are accepted with accept()
  */
-static sock_id_t _initialize_tcp_sock( int domain, int type, const char *addr, int port, bool is_server ) {
+static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, bool is_server ) {
     sock_config_t *sock_cfg;
-    sockaddr_in_t *listen_addr;
+    void *listen_addr;
     
     int open_sock_id = SOCK_NOT_OK;
     int status = SOCK_NOT_OK;
+    int domain;
 
+    struct in_addr ipv4;
+    struct in6_addr ipv6;
+
+
+    if (inet_pton(AF_INET, addr, &ipv4) == 1) {
+        domain = AF_INET;
+    } else if (inet_pton(AF_INET6, addr, &ipv6) == 1) {
+        domain = AF_INET6;
+    } else  {
+        return SOCK_NOT_OK;
+    } 
+    
     if ((open_sock_id = _find_open_sock()) == SOCK_NOT_OK) {
         return SOCK_NOT_OK;
     }
-    
+
     sock_cfg = sock_configs[open_sock_id] = malloc(sizeof(sock_config_t));
+    
+    if (domain == AF_INET) {
+    
+        listen_addr = sock_cfg->listen_addr = malloc(sizeof(sockaddr_in_t));
+        sock_cfg->listen_len = sizeof(*(sockaddr_in_t *)listen_addr);
+
+        ((sockaddr_in_t *)listen_addr)->sin_family = domain;
+        ((sockaddr_in_t *)listen_addr)->sin_port = htons(port);
+        ((sockaddr_in_t *)listen_addr)->sin_addr = ipv4;
+
+        sock_cfg->addr_str = malloc(strlen(addr) * sizeof(char));
+    
+        strncpy(sock_cfg->addr_str, addr, strlen(addr) * sizeof(char));
+
+    } else if (domain == AF_INET6) {
+
+        listen_addr = sock_cfg->listen_addr = malloc(sizeof(sockaddr_in6_t));
+        sock_cfg->listen_len = sizeof(*(sockaddr_in6_t *)listen_addr);
+
+        ((sockaddr_in6_t *)listen_addr)->sin6_family = domain;
+        ((sockaddr_in6_t *)listen_addr)->sin6_port = htons(port);
+        ((sockaddr_in6_t *)listen_addr)->sin6_addr = ipv6;
+        
+        sock_cfg->addr_str = malloc(strlen(addr) * sizeof(char));
+        strncpy(sock_cfg->addr_str, addr, strlen(addr) * sizeof(char));
+
+    } else  {
+        free(sock_cfg);
+        return SOCK_NOT_OK;
+    }
+    
     sock_cfg->conn_addr = malloc(sizeof(sockaddr_t));
     sock_cfg->conn_addr_len = sizeof(sock_cfg->conn_addr);
     sock_cfg->conn_buff = malloc(MAX_SERVER_MESSAGE_SIZE * sizeof(char));
     
-    sock_cfg->is_server = is_server;
-    sock_cfg->type = type;
-
-    sock_cfg->listen_addr = malloc(sizeof(sockaddr_in_t));
-    listen_addr = (sockaddr_in_t *)sock_cfg->listen_addr;
-    sock_cfg->listen_len = sizeof(*listen_addr);
-    listen_addr->sin_family = domain;
-    listen_addr->sin_port = htons(port);
-    // sock_cfg->listen_addr->sin_addr.s_addr = s_addr; 
     sock_cfg->listen_opt = 1;
-
-    // Convert IPv4 and IPv6 addresses from text to binary form
-    if(inet_pton(domain, addr, &listen_addr->sin_addr) <= 0) {
-        printf("\nInvalid address/ Address not supported \n");
-        printf("addr: %s\n", addr);
-        return SOCK_NOT_OK;
-    }        
+    sock_cfg->is_server = is_server;
+    sock_cfg->type = type;    
+    sock_cfg->domain = domain;
+    sock_cfg->port = port;
+    sock_cfg->app_type = E_TCP_SOCK;
 
      /* Create an endpoint for communication
       * 
@@ -165,13 +190,12 @@ static sock_id_t _initialize_tcp_sock( int domain, int type, const char *addr, i
  *
  * Initialize local socket to listen on any address. 
  */
-static sock_id_t _initialize_local_sock( int domain, int type, const char* path, bool is_server ) {
+static sock_id_t _initialize_local_sock( int type, const char* path, bool is_server ) {
     sock_config_t *sock_cfg;
     sockaddr_un_t *listen_addr;
     
     int open_sock_id = SOCK_NOT_OK;
     int status = SOCK_NOT_OK;
-    size_t len;
 
     if (!path) { return SOCK_NOT_OK; }
 
@@ -181,25 +205,26 @@ static sock_id_t _initialize_local_sock( int domain, int type, const char* path,
     
     sock_cfg = sock_configs[open_sock_id] = malloc(sizeof(sock_config_t));
     
-    sock_cfg->conn_addr = malloc(sizeof(sockaddr_t));
-    sock_cfg->conn_addr_len = sizeof(sock_cfg->conn_addr);
-    sock_cfg->conn_buff = malloc(MAX_SERVER_MESSAGE_SIZE * sizeof(char));
-    
+    sock_cfg->app_type = E_LOCAL_SOCK;
+    sock_cfg->domain = AF_LOCAL;
     sock_cfg->is_server = is_server;
     sock_cfg->type = type;
-    
-    sock_cfg->listen_addr = malloc(sizeof(sockaddr_un_t));
-    listen_addr = (sockaddr_un_t *)sock_cfg->listen_addr; 
-    sock_cfg->listen_len = sizeof(*listen_addr);
 
-    listen_addr->sun_family = domain;
-    len = strlen(path) * sizeof(char);
-    strncpy(listen_addr->sun_path, path, len);
+    sock_cfg->conn_addr = malloc(sizeof(sockaddr_t));
+    sock_cfg->conn_addr_len = sizeof(sock_cfg->conn_addr);
+    sock_cfg->conn_buff = malloc(128 * sizeof(char));
+    
+    listen_addr = sock_cfg->listen_addr = (sockaddr_un_t *)malloc(sizeof(sockaddr_un_t));
+    listen_addr->sun_family = AF_LOCAL;
+    sock_cfg->listen_len = sizeof(*listen_addr);
+    
+    sock_cfg->addr_str = malloc(strlen(path) * sizeof(char));
+    strncpy(sock_cfg->addr_str, path, strlen(path) * sizeof(char));
 
     /* Enable options for sock descriptor */
     sock_cfg->listen_opt = 1;
 
-    sock_cfg->listen_fd  = socket(domain, type, 0);
+    sock_cfg->listen_fd  = socket(AF_LOCAL, type, 0);
     if (sock_cfg->listen_fd < 0) {
         printf("Failed to get socket\n");
         close_sock(open_sock_id);
@@ -254,7 +279,7 @@ int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
     sock_cfg  = sock_configs[id];
     
     if (sock_cfg == NULL) { return SOCK_NOT_OK; }
-    if ((sock_cfg->app_type != E_IP4_SOCK) && (sock_cfg->app_type != E_IP6_SOCK)) { return SOCK_NOT_OK; } 
+    if (sock_cfg->app_type != E_TCP_SOCK) { return SOCK_NOT_OK; } 
 
     /* Clear buffer */ 
     memset(buffer, 0, len);
@@ -414,8 +439,7 @@ int await_local_receive(sock_id_t id, void *buffer, size_t len) {
 
 int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
     sock_config_t *sock_cfg;
-    sockaddr_in_t *listen_addr;
-    
+
     if (id == NULL) { return SOCK_NOT_OK; }
     if (*id > MAX_NUM_OF_SOCKS) { return SOCK_NOT_OK; }
     if (buffer == NULL) { return SOCK_NOT_OK; }
@@ -423,7 +447,7 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
     sock_cfg = sock_configs[*id];
 
     if (sock_cfg == NULL) { return SOCK_NOT_OK; }
-    if ((sock_cfg->app_type != E_IP4_SOCK) && (sock_cfg->app_type != E_IP6_SOCK)) { return SOCK_NOT_OK; }
+    if (sock_cfg->app_type != E_TCP_SOCK) { return SOCK_NOT_OK; }
 
     /* Server side doesn't connect to socket, as it's already passively listening. */
     if ((!sock_cfg->is_server)) {
@@ -461,45 +485,19 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
         * 
         */
         if (!sock_cfg->is_connected) {
-            if ((sock_cfg->status = connect(sock_cfg->listen_fd, (const sockaddr_t *)sock_cfg->listen_addr, sizeof(sockaddr_t))) < 0) {
+            if ((sock_cfg->status = connect(sock_cfg->listen_fd, (const sockaddr_t *)sock_cfg->listen_addr, sock_cfg->listen_len)) < 0) {
 
-                listen_addr = (sockaddr_in_t *)sock_cfg->listen_addr;
-
+                int port; 
+                char *addr_str = malloc(strlen(sock_cfg->addr_str) * sizeof(char));
+                bool is_server = sock_cfg->is_server;
+                
                 /* TODO: useful standard printout message with what happened, ID, addr, port, etc */
-                printf("Socket ID(%d) failed to connect. \n", *id);
+                // printf("Socket ID(%d) failed to connect. \n", *id);
                 
                 E_APP_SOCK_TYPE app_type = sock_cfg->app_type;
-                bool is_server = sock_cfg->is_server;
-                /* Port is stored in network bytes order, app provides host byte order */
-                int port = ntohs(listen_addr->sin_port);
-                
-                int af;
-                socklen_t size;
-                char *addr_str;
-                
-                /* Get current address */
-                switch(sock_cfg->app_type) {
-                    case E_IP4_SOCK:
-                        af = AF_INET;
-                        size = INET_ADDRSTRLEN;
-                        break;
-                    case E_IP6_SOCK:
-                        af = AF_INET6;
-                        size = INET6_ADDRSTRLEN;
-                        break;
-                    case E_UDP_SOCK:
-                    default:
-                        /* Not supported */
-                        return SOCK_NOT_OK;
-                }
-                        
-                addr_str = malloc(size * sizeof(char));
 
-                /* Convert IPv4 and IPv6 addresses from binary to text form */
-                if(inet_ntop(af, &listen_addr->sin_addr, addr_str, size) <= 0) {
-                    printf("\nInvalid address/ Address not supported \n");
-                    return SOCK_NOT_OK;
-                }        
+                strncpy(addr_str, sock_cfg->addr_str, strlen(sock_cfg->addr_str) * sizeof(char));
+                port = sock_cfg->port;
 
                 /* Failed to connect to sock, closing socket, and reconnecting */
                 close_sock(*id);
@@ -508,7 +506,8 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
                 *id = initialize_sock(app_type, addr_str, port, is_server);
 
                 free(addr_str);
-            
+
+                sock_cfg = sock_configs[*id];
                 sock_cfg->is_connected = false;
                 
                 return SOCK_NOT_OK;
@@ -541,7 +540,6 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
 int await_local_send( sock_id_t *id, const void *buffer, size_t len ) {
     sock_config_t *sock_cfg;
     sockaddr_un_t *listen_addr;
-    char *path;
     
     if (id == NULL) { return SOCK_NOT_OK; }
     if (*id > MAX_NUM_OF_SOCKS) { return SOCK_NOT_OK; }
@@ -577,12 +575,10 @@ int await_local_send( sock_id_t *id, const void *buffer, size_t len ) {
             if ((sock_cfg->status = connect(sock_cfg->listen_fd, 
                 (const sockaddr_t *)listen_addr, sock_cfg->listen_len)) < 0) {
 
-                size_t len;
                 bool is_server = sock_cfg->is_server;
+                char *path = malloc(strlen(sock_cfg->addr_str) * sizeof(char));
 
-                len = strlen(listen_addr->sun_path) * sizeof(char);
-                path = malloc(len);
-                strncpy(path, listen_addr->sun_path, len);
+                strncpy(path, sock_cfg->addr_str, strlen(sock_cfg->addr_str) * sizeof(char));
 
                 /* TODO: useful standard printout message with what happened, ID, addr, port, etc */
                 printf("Local socket ID(%d) failed to connect. \n", *id);
@@ -620,20 +616,12 @@ int await_local_send( sock_id_t *id, const void *buffer, size_t len ) {
  */
 int close_sock(sock_id_t id) {
     sock_config_t *sock_cfg;
-    size_t len;
-    char *path;
     
     if (id > MAX_NUM_OF_SOCKS) { return SOCK_NOT_OK; }
     
     sock_cfg = sock_configs[id];
 
     if (sock_cfg == NULL) { return SOCK_NOT_OK; }
-
-    if (sock_cfg->app_type == E_LOCAL_SOCK) {
-        len = strlen(((sockaddr_un_t *)sock_cfg->listen_addr)->sun_path) * sizeof(char);
-        path = malloc(len);
-        strncpy(path, ((sockaddr_un_t *)sock_cfg->listen_addr)->sun_path, len);
-    }
 
     /* Close a file descriptor (fd)
      *
@@ -658,13 +646,13 @@ int close_sock(sock_id_t id) {
      * socket file yet, the client will receive an ENOENT error.
      */
     if ((sock_cfg->app_type == E_LOCAL_SOCK) && sock_cfg->is_server ) {
-        if (unlink(path) < 0) {
+        if (unlink(sock_cfg->addr_str) < 0) {
             // Don't care since we want to de-link anyways
             // printf("Failed to unlink path: %s\n", path);
         }
-        free(path);
     }
-
+    
+    if (sock_cfg->addr_str)    { free(sock_cfg->addr_str);     }
     if (sock_cfg->conn_buff)   { free(sock_cfg->conn_buff);   } 
     if (sock_cfg->conn_addr)   { free(sock_cfg->conn_addr);   }
     if (sock_cfg->listen_addr) { free(sock_cfg->listen_addr); }

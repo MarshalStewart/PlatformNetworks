@@ -254,28 +254,28 @@ int read_pipe ( pipe_id_t id, void *buffer, size_t len ) {
             return THREAD_NOT_OK;
         }
     }
-
+    
     read_pipefd = cur->pipfd[READ_END_OF_PIPE];
 
     // Set read end of pipe to non-blocking mode
     fcntl(read_pipefd, F_SETFL, O_NONBLOCK);
-
+    
     if ((temp_buffer = malloc(len)) == NULL) {
         return THREAD_NOT_OK;
     }
-
+    
     if ((num_bytes = read(read_pipefd, temp_buffer, len)) < 0) {
         free(temp_buffer);
         return THREAD_NOT_OK;
     }
-
+    
     /* Update application buffer */
     if (num_bytes > len) {
         (void)memcpy(buffer, temp_buffer, len);
     } else {
         (void)memcpy(buffer, temp_buffer, num_bytes);
     }
-
+    
     free(temp_buffer);
 
     return num_bytes;

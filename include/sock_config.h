@@ -23,6 +23,9 @@
 #define MAX_NUM_OF_SOCKS 3
 #define MAX_NUM_OF_CLIENTS 10
 
+#define INET4_ADDRSIZE INET_ADDRSTRLEN * 4
+#define INET6_ADDRSIZE INET6_ADDRSTRLEN * 4
+
 #define LOCAL_PORT_NUM 9003
 #define TCP_PORT_NUM 9004
 #define UDP_PORT_NUM 9005
@@ -30,6 +33,7 @@
 
 typedef struct sockaddr_un sockaddr_un_t;
 typedef struct sockaddr_in sockaddr_in_t;
+typedef struct sockaddr_in6 sockaddr_in6_t;
 typedef struct sockaddr sockaddr_t;
 typedef int sock_id_t;
 
@@ -42,15 +46,21 @@ typedef enum {
 
 typedef enum {
     E_LOCAL_SOCK = 0,
-    E_IP4_SOCK,
-    E_IP6_SOCK,
+    E_TCP_SOCK,
     E_UDP_SOCK,
 } E_APP_SOCK_TYPE;
+
+typedef enum {
+    E_IPV4_SOCK = 0,
+    E_IPV6_SOCK,
+} E_DOMAIN_TYPE;
 
 typedef struct {
     bool is_server;
     bool is_connected;
     E_APP_SOCK_TYPE app_type;
+    E_DOMAIN_TYPE domain;
+    
     int type;
     int status;
 
@@ -59,6 +69,9 @@ typedef struct {
     int listen_fd;
     socklen_t listen_len;
     void *listen_addr;
+
+    char *addr_str;
+    int port;
     
     int conn_fd;
     socklen_t conn_addr_len;
