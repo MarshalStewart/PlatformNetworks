@@ -3,8 +3,9 @@
 static sock_config_t *sock_configs[MAX_NUM_OF_SOCKS];
 
 /* Static Functions */
-static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, bool is_server);
 static sock_id_t _initialize_local_sock( int type, const char *path, bool is_server);
+static sock_id_t _initialize_network_sock( int type, const char *addr, int port, bool is_server);
+
 static int _find_open_sock( void );
 
 /* Initialize a sock connection, configuration
@@ -12,7 +13,7 @@ static int _find_open_sock( void );
  * This is the configuration handler for intializing a socket, function will handle setting proper 
  * domains, families, etc. Performs a sanity check on the provided address. Address must be
  * of the exact requirements of that socket type. On error returns SOCK_NOT_OK, on success returns
- * id of socket to be used as a handle for the socket.
+ * id of socket to be used as a handle for the socket. 
  * 
  * NOTE: When using a LOCAL socket, address and port are ignored.
  */
@@ -25,11 +26,15 @@ sock_id_t initialize_sock(E_APP_SOCK_TYPE app_type, const char *addr, int port, 
             }
             break;
         case E_TCP_SOCK:
-            if ((id = _initialize_tcp_sock(SOCK_STREAM, addr, port, is_server)) < 0) {
+            if ((id = _initialize_network_sock(SOCK_STREAM, addr, port, is_server)) < 0) {
                 return SOCK_NOT_OK;
             }
             break;
         case E_UDP_SOCK:
+            if ((id = _initialize_network_sock(SOCK_DGRAM, addr, port, is_server)) < 0) {
+                return SOCK_NOT_OK;
+            }
+            break;
         default:
             break;
     }
@@ -40,7 +45,8 @@ sock_id_t initialize_sock(E_APP_SOCK_TYPE app_type, const char *addr, int port, 
 /* Initialize a sock connection
  * 
  * The following will initialize a sock with the given domain, type, family, address, and port. Functionality
- * will vary depending on if the sock is of type server or client. 
+ * will vary depending on if the sock is of type server or client. Type indicates whether datagram or AF_INET. 
+ * ipv4 or ipv6 is determined by address. 
  * 
  * To accept connections, the following steps are performed
  * 1. A sock is created with socket()
@@ -49,7 +55,7 @@ sock_id_t initialize_sock(E_APP_SOCK_TYPE app_type, const char *addr, int port, 
  *      with listen().
  * 4. Connections are accepted with accept()
  */
-static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, bool is_server ) {
+static sock_id_t _initialize_network_sock( int type, const char *addr, int port, bool is_server ) {
     sock_config_t *sock_cfg;
     void *listen_addr;
     
@@ -114,7 +120,12 @@ static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, boo
     sock_cfg->type = type;    
     sock_cfg->domain = domain;
     sock_cfg->port = port;
-    sock_cfg->app_type = E_TCP_SOCK;
+
+    if (type == SOCK_DGRAM) {
+        sock_cfg->app_type = E_UDP_SOCK;
+    } else {
+        sock_cfg->app_type = E_TCP_SOCK;
+    }
 
      /* Create an endpoint for communication
       * 
@@ -150,37 +161,40 @@ static sock_id_t _initialize_tcp_sock( int type, const char *addr, int port, boo
             return SOCK_NOT_OK;
         }
         
-        /* Socket Options (Reuse Address)
-         * To manipulate options at the socks API level, level is specified as SOL_SOCK. The
-         * option SO_REUSEADDR will bypass the restrictions of the OS for an address already in use.
-         * This is useful during development, as you don't want to wait for the OS to release the
-         * address after restarting the server. This option should be removed in a production setting.
-         */
-        if ((status = setsockopt(sock_cfg->listen_fd, 
-                SOL_SOCKET, SO_REUSEADDR, &sock_cfg->listen_opt, sizeof(sock_cfg->listen_opt))) < 0) {
+        /* UDP Connections don't use listen() */
+        if (sock_cfg->app_type == E_TCP_SOCK ) {
+        
+            /* Socket Options (Reuse Address)
+            * To manipulate options at the socks API level, level is specified as SOL_SOCK. The
+            * option SO_REUSEADDR will bypass the restrictions of the OS for an address already in use.
+            * This is useful during development, as you don't want to wait for the OS to release the
+            * address after restarting the server. This option should be removed in a production setting.
+            */
+            if ((status = setsockopt(sock_cfg->listen_fd, 
+                    SOL_SOCKET, SO_REUSEADDR, &sock_cfg->listen_opt, sizeof(sock_cfg->listen_opt))) < 0) {
 
-            printf("Failed to set socket options\n");
-            close_sock(open_sock_id);
-            return SOCK_NOT_OK;
+                printf("Failed to set socket options\n");
+                close_sock(open_sock_id);
+                return SOCK_NOT_OK;
+            }
+
+            /* Listen for connection on a sock
+            *
+            * Marks the sock referred to by the fs, as a passive socket, that is, as a socket that
+            * will be used to accept incoming connection requests using accept(). The backlog argument
+            * defines the maximum length to which the queue of pending connections for fs may grow. If a
+            * connection request arrives when the queue is full, the client may recieve an error that the
+            * connection was refused. This behavior is dependent on the underlying protocol. Some may 
+            * support retransmission.
+            * 
+            */
+            if ((status = listen(sock_cfg->listen_fd, MAX_NUM_OF_CLIENTS)) < 0){
+
+                printf("Failed to listen on socket\n");
+                close_sock(open_sock_id);
+                return SOCK_NOT_OK;
+            }
         }
-
-        /* Listen for connection on a sock
-         *
-         * Marks the sock referred to by the fs, as a passive socket, that is, as a socket that
-         * will be used to accept incoming connection requests using accept(). The backlog argument
-         * defines the maximum length to which the queue of pending connections for fs may grow. If a
-         * connection request arrives when the queue is full, the client may recieve an error that the
-         * connection was refused. This behavior is dependent on the underlying protocol. Some may 
-         * support retransmission. 
-         * 
-         */
-        if ((status = listen(sock_cfg->listen_fd, MAX_NUM_OF_CLIENTS)) < 0){
-
-            printf("Failed to listen on socket\n");
-            close_sock(open_sock_id);
-            return SOCK_NOT_OK;
-        }
-
     }
  
     return open_sock_id;
@@ -261,16 +275,16 @@ static sock_id_t _initialize_local_sock( int type, const char* path, bool is_ser
     return open_sock_id;
 }
 
-/* Await TCP Receive 
+/* Await Network Receive 
  *
  * Checks if there is already an open connection, if not will create a new connection via
  * accept(). When a message is received, will write to buffer, if the number of bytes received is
  * greater than len, only len bytes are written. On success will return SOCK_OK, on error will return 
- * SOCK_NOT_OK.
+ * SOCK_NOT_OK. Type indicates whether datagram or AF_INET. ipv4 or ipv6 is determined by address. 
  * 
  * TODO: Mechanism to detect whether more bytes where received than can be written.
  */
-int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
+int await_network_receive(sock_id_t id, void *buffer, size_t len) {
     sock_config_t *sock_cfg;
     
     if (id > MAX_NUM_OF_SOCKS) { return SOCK_NOT_OK; }
@@ -279,7 +293,7 @@ int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
     sock_cfg  = sock_configs[id];
     
     if (sock_cfg == NULL) { return SOCK_NOT_OK; }
-    if (sock_cfg->app_type != E_TCP_SOCK) { return SOCK_NOT_OK; } 
+    if ((sock_cfg->app_type != E_TCP_SOCK) && (sock_cfg->app_type != E_UDP_SOCK)) { return SOCK_NOT_OK; } 
 
     /* Clear buffer */ 
     memset(buffer, 0, len);
@@ -307,7 +321,8 @@ int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
         }        
     }
 
-    if ( !sock_cfg->is_connected ) {
+    /* UDP doesn't accept */
+    if ( (!sock_cfg->is_connected) && (sock_cfg->app_type == E_TCP_SOCK) ) {
         /* Accepting new connection
         * Extracts the first connection request on the queue. Creates a new connected sock, returns fd
         * for that sock. Original socket is unaffected. The newly created socket is not in the listening
@@ -344,7 +359,7 @@ int await_tcp_receive(sock_id_t id, void *buffer, size_t len) {
      * The only difference between recv() and read() is the presence of flags. 
      *
      */
-    sock_cfg->conn_num_bytes = recv(sock_cfg->conn_fd, sock_cfg->conn_buff, sizeof(sock_cfg->conn_buff), 0);
+    sock_cfg->conn_num_bytes = recv(sock_cfg->listen_fd, sock_cfg->conn_buff, sizeof(sock_cfg->conn_buff), 0);
     
     if (sock_cfg->conn_num_bytes > 0) {
 
@@ -437,7 +452,7 @@ int await_local_receive(sock_id_t id, void *buffer, size_t len) {
     }
 }
 
-int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
+int await_network_send(sock_id_t *id, const void *buffer, size_t len) {
     sock_config_t *sock_cfg;
 
     if (id == NULL) { return SOCK_NOT_OK; }
@@ -447,7 +462,7 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
     sock_cfg = sock_configs[*id];
 
     if (sock_cfg == NULL) { return SOCK_NOT_OK; }
-    if (sock_cfg->app_type != E_TCP_SOCK) { return SOCK_NOT_OK; }
+    if ((sock_cfg->app_type != E_TCP_SOCK) && (sock_cfg->app_type != E_UDP_SOCK)) { return SOCK_NOT_OK; } 
 
     /* Server side doesn't connect to socket, as it's already passively listening. */
     if ((!sock_cfg->is_server)) {
@@ -483,8 +498,9 @@ int await_tcp_send(sock_id_t *id, const void *buffer, size_t len) {
         * zero is returned. On error, -1 is returned. If connection fails, consider the state of the sock
         * as unspecified. Protable applications should close the sock and crete a new one for reconnecting.
         * 
+        * NOTE: UDP doesn't connect() 
         */
-        if (!sock_cfg->is_connected) {
+        if ( (!sock_cfg->is_connected) && (sock_cfg->app_type == E_TCP_SOCK)  ) {
             if ((sock_cfg->status = connect(sock_cfg->listen_fd, (const sockaddr_t *)sock_cfg->listen_addr, sock_cfg->listen_len)) < 0) {
 
                 int port; 

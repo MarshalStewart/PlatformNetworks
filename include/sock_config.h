@@ -107,15 +107,15 @@ extern int close_sock( sock_id_t id );
 extern int await_local_receive( sock_id_t id, void *buffer, size_t len );
 extern int await_local_send( sock_id_t *id, const void *buffer, size_t len );
 
-/* TCP APIs
+/* TCP and UDP APIs
  * 
  * Supports both IP4 and IP6, whether IP4 or IP6 is used dependens on the type passed during 
  * initialization. On a failure to connect or accept, will re-initialize the socket at the same
  * id handler. This is a failure, and the send/receive must be attempted again. APIs return SOCK_OK on 
  * success, and SOCK_NOT_OK on failure. 
  */
-extern int await_tcp_receive( sock_id_t id, void *buffer, size_t len );
-extern int await_tcp_send( sock_id_t *id, const void *buffer, size_t len );
+extern int await_network_receive( sock_id_t id, void *buffer, size_t len );
+extern int await_network_send( sock_id_t *id, const void *buffer, size_t len );
 
 
 #endif // __SOCK_CONFIG_H_

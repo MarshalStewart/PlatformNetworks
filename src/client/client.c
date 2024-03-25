@@ -33,15 +33,15 @@ static int server_service( void ) {
     char message[8] = "marsh";
     int rc;
 
-    if ((rc = await_local_send(&id, message, 8)) < 0) {
-        printf("Failed to send data to server\n");
-        return -1;
-    }
-
-    // if ((rc = await_tcp_send(&id, message, 8)) < 0) {
+    // if ((rc = await_local_send(&id, message, 8)) < 0) {
     //     printf("Failed to send data to server\n");
     //     return -1;
-    // }    
+    // }
+
+    if ((rc = await_network_send(&id, message, 8)) < 0) {
+        printf("Failed to send data to server\n");
+        return -1;
+    }         
 
     return 0;
 }
@@ -50,10 +50,10 @@ int main( int argc, char *agv[] ) {
 
     signal(SIGINT, int_handler);
 
-    if ((id = initialize_sock(E_LOCAL_SOCK, my_sock, 0, CLIENT_SIDE)) < 0) {
-        printf("Failed to get a socket.\n");
-        return -1;
-    }    
+    // if ((id = initialize_sock(E_LOCAL_SOCK, my_sock, 0, CLIENT_SIDE)) < 0) {
+    //     printf("Failed to get a socket.\n");
+    //     return -1;
+    // }    
 
     // if ((id = initialize_sock(E_TCP_SOCK, "0.0.0.0", 9003, CLIENT_SIDE)) < 0) {
     //    printf("Failed to get a socket.\n");
@@ -70,10 +70,10 @@ int main( int argc, char *agv[] ) {
     //     return -1;
     // }   
 
-    // if ((id = initialize_sock(E_UDP_SOCK, "::", 9003, CLIENT_SIDE)) < 0) {
-    //     printf("Failed to get a socket.\n");
-    //     return -1;
-    // }   
+    if ((id = initialize_sock(E_UDP_SOCK, "::", 9003, CLIENT_SIDE)) < 0) {
+        printf("Failed to get a socket.\n");
+        return -1;
+    }   
 
     /* Setup App Client Metrics */
 
